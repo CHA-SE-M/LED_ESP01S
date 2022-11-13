@@ -1,4 +1,3 @@
-#include <arduino.h>
 /**
  * @desp检测物理按键
  * @params pin 按键引脚
@@ -6,6 +5,8 @@
  *         ptr 长按执行函数
  * @return 0 无按键操作，1 短按 2长按
  **/
+#include <arduino.h>
+#include "checkBtn.h" 
 int checkBtn(int pin, int state)
 {
   if (digitalRead(pin) == state)
