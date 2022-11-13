@@ -14,7 +14,6 @@
 #include <WiFiManager.h>
 #include <Ticker.h>
 #include <string.h>
-#include "light/light.h"
 
 //********************需要修改的部分*******************//
 int aaa = 0;
@@ -34,59 +33,43 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 Ticker ticker;
 
-//定义灯渐变方向
-boolean LEDDirect = true;
+//定义相关变量
+bool LEDDirect = true;
+bool ledState = false;
+int ledBright = 100;
 
-// 灯状态改变的硬件操作
-void ledStateChange(bool state, int bright)
-{
-  if (state == LIGHT_ON)
-  {
-    analogWrite(LED, 10 * bright);
-  }
-  else
-  {
-    analogWrite(LED, 0);
-  }
-}
-
-// 灯亮度变化的硬件操作
-void ledBrightChange(bool state, int bright)
-{
-  analogWrite(LED, 10 * bright);
-}
-
-// 创建灯对象
-Light light(ledStateChange, ledBrightChange);
 
 //打开灯泡
 void turnOnLed()
 {
   Serial.println("turn on light");
-  light.setLedState(LIGHT_ON);
+  analogWrite(LED, 10 * ledBright);
+  ledState = true;
 }
 
 //关闭灯泡
 void turnOffLed()
 {
   Serial.println("turn off light");
-  light.setLedState(LIGHT_OFF);
+  digitalWrite(LED, LOW);
+  ledState = false;
 }
 
 // 设置亮度
 void setBright(int num)
 {
   Serial.println("set light bright");
-  light.setLedBright(num);
+  analogWrite(LED, 10*num);
+  ledBright = num;
 }
 
 //逐渐开灯
 void wake()
 {
-  for (int i = 1; i <= 100; i++)
+  for (int i = 1; i <= 1000; i++)
   {
-    light.setLedBright(i);
-    delay(30);
+    analogWrite(LED, i);
+    delay(3);
   }
 }
 
@@ -121,7 +104,7 @@ void callback(char *topic, byte *payload, unsigned int length)
   String num = strtok(NULL, "#");
   if (cmd == "on")
   {
-    if (num)
+    if (num != "")
     {
       // 设置亮度
       setBright(atoi(&num[0]));
@@ -206,7 +189,7 @@ void btnOpera()
   // 短按逻辑
   if (num == 1)
   {
-    if (light.getLedState())
+    if (ledState)
     {
       turnOffLed();
       pubMQTTmsg("off");
@@ -218,25 +201,23 @@ void btnOpera()
     }
   }
   else if (num == 2){
-    if(light.getLedBright() >= 100){
+    if(ledBright >= 100){
       LEDDirect = false;
     }
-    if(light.getLedBright() <= 1){
+    if(ledBright <= 1){
       LEDDirect = true;
     }
     if(LEDDirect){
-      setBright(light.getLedBright()+1);
+      setBright(ledBright+1);
     }else{
-      setBright(light.getLedBright()-1);
+      setBright(ledBright-1);
     }
   }
   else if (num == 3)
   {
     char str[10];
-    char str1[10] = "on#";
-    itoa(light.getLedBright(), str, 10);
-    strcat(str1, str);
-    pubMQTTmsg(strcat("on#", str1));
+    itoa(ledBright, str, 10);
+    pubMQTTmsg(strcat("on#", str));
   }
 }
 long prevTime = 0;
@@ -248,7 +229,7 @@ int checkBtn(int pin, int state)
   {
     nowTime = millis();
 
-    if (nowTime - prevTime > 300)
+    if (nowTime - prevTime > LONG_PRESS)
     {
       return 2;
     }
@@ -262,7 +243,7 @@ int checkBtn(int pin, int state)
   {
     press = false;
     nowTime = millis();
-    if (nowTime - prevTime > 300)
+    if (nowTime - prevTime > LONG_PRESS)
     {
       return 3;
     }
@@ -339,15 +320,11 @@ void updateBin()
   }
 }
 
-void init()
+void setup()
 {
   pinMode(LED, OUTPUT);          //设置引脚为输出模式
   pinMode(BUTTON, INPUT_PULLUP); //设置按键上拉输出模式
   digitalWrite(LED, HIGH);       //默认引脚上电高电平
-}
-void setup()
-{
-  init();
   Serial.begin(9600);                              //设置波特率9600
   setup_wifi();                                    //设置wifi的函数，连接wifi
   client.setServer(mqtt_server, mqtt_server_port); //设置mqtt服务器
