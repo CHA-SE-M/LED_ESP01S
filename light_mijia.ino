@@ -14,7 +14,7 @@
 #include <WiFiManager.h>
 #include <Ticker.h>
 #include <string.h>
-#include "light/light.h"
+#include "light.h"
 
 //********************需要修改的部分*******************//
 int aaa = 0;
@@ -27,6 +27,28 @@ const char *topicUp = "light002/up";                                            
 #define INTERVAL 100                                                                                 //物理按键检测间隔
 #define LONG_PRESS 300                                                                               //物理按键检测间隔
 //**************************************************//
+class ESP01Light : public Light
+{
+public:
+  boolean LEDDirect = true; //定义灯渐变方向
+  void setLedState(bool state)
+  {
+    Light::setLedState(state);
+    if (state == LIGHT_ON)
+    {
+      analogWrite(LED, 10 * this->ledBright);
+    }
+    else
+    {
+      analogWrite(LED, 0);
+    }
+  }
+  void setLedBright(int num)
+  {
+    Light::setLedBright(num);
+    analogWrite(LED, 10 * this->ledBright);
+  }
+};
 
 const char *mqtt_server = "bemfa.com"; //默认，MQTT服务器
 const int mqtt_server_port = 9501;     //默认，MQTT服务器
@@ -34,30 +56,8 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 Ticker ticker;
 
-//定义灯渐变方向
-boolean LEDDirect = true;
-
-// 灯状态改变的硬件操作
-void ledStateChange(bool state, int bright)
-{
-  if (state == LIGHT_ON)
-  {
-    analogWrite(LED, 10 * bright);
-  }
-  else
-  {
-    analogWrite(LED, 0);
-  }
-}
-
-// 灯亮度变化的硬件操作
-void ledBrightChange(bool state, int bright)
-{
-  analogWrite(LED, 10 * bright);
-}
-
 // 创建灯对象
-Light light(ledStateChange, ledBrightChange);
+ESP01Light light;
 
 //打开灯泡
 void turnOnLed()
@@ -121,7 +121,7 @@ void callback(char *topic, byte *payload, unsigned int length)
   String num = strtok(NULL, "#");
   if (cmd == "on")
   {
-    if (num)
+    if (num != "")
     {
       // 设置亮度
       setBright(atoi(&num[0]));
@@ -217,26 +217,30 @@ void btnOpera()
       pubMQTTmsg("on");
     }
   }
-  else if (num == 2){
-    if(light.getLedBright() >= 100){
-      LEDDirect = false;
+  else if (num == 2)
+  {
+    if (light.getLedBright() >= 100)
+    {
+      light.LEDDirect = false;
     }
-    if(light.getLedBright() <= 1){
-      LEDDirect = true;
+    if (light.getLedBright() <= 1)
+    {
+      light.LEDDirect = true;
     }
-    if(LEDDirect){
-      setBright(light.getLedBright()+1);
-    }else{
-      setBright(light.getLedBright()-1);
+    if (light.LEDDirect)
+    {
+      setBright(light.getLedBright() + 1);
+    }
+    else
+    {
+      setBright(light.getLedBright() - 1);
     }
   }
   else if (num == 3)
   {
     char str[10];
-    char str1[10] = "on#";
     itoa(light.getLedBright(), str, 10);
-    strcat(str1, str);
-    pubMQTTmsg(strcat("on#", str1));
+    pubMQTTmsg(strcat("on#", str));
   }
 }
 long prevTime = 0;
@@ -248,7 +252,7 @@ int checkBtn(int pin, int state)
   {
     nowTime = millis();
 
-    if (nowTime - prevTime > 300)
+    if (nowTime - prevTime > LONG_PRESS)
     {
       return 2;
     }
@@ -262,7 +266,7 @@ int checkBtn(int pin, int state)
   {
     press = false;
     nowTime = millis();
-    if (nowTime - prevTime > 300)
+    if (nowTime - prevTime > LONG_PRESS)
     {
       return 3;
     }
@@ -339,15 +343,11 @@ void updateBin()
   }
 }
 
-void init()
-{
-  pinMode(LED, OUTPUT);          //设置引脚为输出模式
-  pinMode(BUTTON, INPUT_PULLUP); //设置按键上拉输出模式
-  digitalWrite(LED, HIGH);       //默认引脚上电高电平
-}
 void setup()
 {
-  init();
+  pinMode(LED, OUTPUT);                            //设置引脚为输出模式
+  pinMode(BUTTON, INPUT_PULLUP);                   //设置按键上拉输出模式
+  digitalWrite(LED, HIGH);                         //默认引脚上电高电平
   Serial.begin(9600);                              //设置波特率9600
   setup_wifi();                                    //设置wifi的函数，连接wifi
   client.setServer(mqtt_server, mqtt_server_port); //设置mqtt服务器
