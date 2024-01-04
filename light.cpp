@@ -5,33 +5,33 @@ Light::Light(){
   this->ledState = false;
   this->ledBright = 100;
 }
-Light::Light(void (*ledStateCb)(bool ledState, int ledBright),void (*ledBrightCb)(bool ledState, int ledBright)){
-  this->ledState = false;
-  this->ledBright = 100;
-  this->ledStateCb = ledStateCb;
-  this->ledBrightCb = ledBrightCb;
-}
 
+// 设置灯的状态
 void Light::setLedState(bool state){
   this->ledState = state;
-  if(this->ledStateCb){
-    this->ledStateCb(this->ledState, this->ledBright);
-  }
 }
 
+// 得到灯的状态
 bool Light::getLedState(){
   return this->ledState;
 }
 
+// 切换灯的开关
 void Light::turnLedState(){
   this->setLedState(!this->ledState);
 }
 
 void Light::setLedBright(int num){
   this->ledBright = num;
-  if(this->ledBrightCb){
-    this->ledBrightCb(this->ledState, this->ledBright);
+  if(num == 0)
+  {
+    this->ledState = false;
+  }else
+  {
+    this->ledState=true;
   }
+  
+  
 }
 
 int Light::getLedBright(){

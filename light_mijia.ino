@@ -14,18 +14,41 @@
 #include <WiFiManager.h>
 #include <Ticker.h>
 #include <string.h>
+#include "light.h"
 
 //********************需要修改的部分*******************//
 int aaa = 0;
-String upUrl = "http://bin.bemfa.com/b/1BcMTE3M2ZiYWQ3NjAzNGY3YzM2MjlhNGExMGQ1ZGVlNTc=light002.bin"; // 升级网址
+String upUrl = "http://bin.bemfa.com/b/1BcMTE3M2ZiYWQ3NjAzNGY3YzM2MjlhNGExMGQ1ZGVlNTc=light1002.bin"; // 升级网址
 #define ID_MQTT "1173fbad76034f7c3629a4a10d5dee57"                                                   //用户私钥，控制台获取
-const char *topic = "light002";                                                                      //主题名字，可在巴法云控制台自行创建，名称随意
-const char *topicUp = "light002/up";                                                                 //只更新数据
+const char *topic = "light1002";                                                                      //主题名字，可在巴法云控制台自行创建，名称随意
+const char *topicUp = "light1002/up";                                                                 //只更新数据
 #define LED 0                                                                                        //单片机LED引脚值
 #define BUTTON 2                                                                                     //设备的物理按键引脚
 #define INTERVAL 100                                                                                 //物理按键检测间隔
-#define LONG_PRESS 300                                                                               //物理按键检测间隔
+#define LONG_PRESS 300                                                                               //物理按键长按定义
 //**************************************************//
+class ESP01Light : public Light
+{
+public:
+  boolean LEDDirect = true; //定义灯渐变方向
+  void setLedState(bool state)
+  {
+    Light::setLedState(state);
+    if (state == LIGHT_ON)
+    {
+      analogWrite(LED, 10 * this->ledBright);
+    }
+    else
+    {
+      analogWrite(LED, 0);
+    }
+  }
+  void setLedBright(int num)
+  {
+    Light::setLedBright(num);
+    analogWrite(LED, 10 * num);
+  }
+};
 
 const char *mqtt_server = "bemfa.com"; //默认，MQTT服务器
 const int mqtt_server_port = 9501;     //默认，MQTT服务器
@@ -33,11 +56,8 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 Ticker ticker;
 
-//定义相关变量
-bool LEDDirect = true;
-bool ledState = false;
-int ledBright = 100;
-
+// 创建灯对象
+ESP01Light light;
 
 //打开灯泡
 void turnOnLed()
@@ -66,11 +86,15 @@ void setBright(int num)
 //逐渐开灯
 void wake()
 {
-  for (int i = 1; i <= 1000; i++)
+  if(light.getLedState() == false)
   {
-    analogWrite(LED, i);
-    delay(3);
+    for (int i = 1; i <= 100; i++)
+    {
+      light.setLedBright(i);
+      delay(30);
+    }
   }
+ 
 }
 
 // 连接wifi
@@ -124,11 +148,6 @@ void callback(char *topic, byte *payload, unsigned int length)
   {
     // 缓慢开灯
     wake();
-  }
-  else if (cmd == "update")
-  {
-    // 更新固件
-    updateBin();
   }
   msg = "";
 }
@@ -186,38 +205,53 @@ void pubMQTTmsg(char *msg)
 void btnOpera()
 {
   int num = checkBtn(BUTTON, LOW);
-  // 短按逻辑
-  if (num == 1)
+  char str[10] = "on#";
+  switch(num)
   {
-    if (ledState)
+    // 短按逻辑
+    case 1:
     {
-      turnOffLed();
-      pubMQTTmsg("off");
+      if (light.getLedState() == true)
+      {
+        turnOffLed();
+        pubMQTTmsg("off");
+      }
+      else
+      {
+        turnOnLed();
+        pubMQTTmsg("on");
+      }
+      break;
     }
-    else
+    case 2:
     {
-      turnOnLed();
-      pubMQTTmsg("on");
+      if (light.getLedBright() >= 100)
+      {
+        light.LEDDirect = false;
+      }
+      if (light.getLedBright() <= 1)
+      {
+        light.LEDDirect = true;
+      }
+      if (light.LEDDirect)
+      {
+        setBright(light.getLedBright() + 1);
+      }
+      else
+      {
+        setBright(light.getLedBright() - 1);
+      }
+      break;
     }
-  }
-  else if (num == 2){
-    if(ledBright >= 100){
-      LEDDirect = false;
+    case 3:
+    {
+      itoa(light.getLedBright(), &str[3], 10);
+      pubMQTTmsg(str);
+      break;
     }
-    if(ledBright <= 1){
-      LEDDirect = true;
+    default:{
+      ;
     }
-    if(LEDDirect){
-      setBright(ledBright+1);
-    }else{
-      setBright(ledBright-1);
-    }
-  }
-  else if (num == 3)
-  {
-    char str[10];
-    itoa(ledBright, str, 10);
-    pubMQTTmsg(strcat("on#", str));
   }
 }
 long prevTime = 0;
@@ -256,75 +290,11 @@ int checkBtn(int pin, int state)
   return 0;
 }
 
-//当升级开始时，打印日志
-void update_started()
-{
-  Serial.println("CALLBACK:  HTTP update process started");
-  digitalWrite(LED, HIGH);
-  delay(100);
-  digitalWrite(LED, LOW);
-  delay(100);
-  digitalWrite(LED, HIGH);
-  delay(100);
-  digitalWrite(LED, LOW);
-  delay(100);
-}
-
-//当升级结束时，打印日志
-void update_finished()
-{
-  Serial.println("CALLBACK:  HTTP update process finished");
-  digitalWrite(LED, HIGH);
-}
-
-//当升级中，打印日志
-void update_progress(int cur, int total)
-{
-  Serial.printf("CALLBACK:  HTTP update process at %d of %d bytes...\n", cur, total);
-}
-
-//当升级失败时，打印日志
-void update_error(int err)
-{
-  Serial.printf("CALLBACK:  HTTP update fatal error code %d\n", err);
-}
-
-/**
- * 固件升级函数
- * 在需要升级的地方，加上这个函数即可，例如setup中加的updateBin(); 
- * 原理：通过http请求获取远程固件，实现升级
- */
-void updateBin()
-{
-  Serial.println("start update");
-  WiFiClient UpdateClient;
-
-  ESPhttpUpdate.onStart(update_started);     //当升级开始时
-  ESPhttpUpdate.onEnd(update_finished);      //当升级结束时
-  ESPhttpUpdate.onProgress(update_progress); //当升级中
-  ESPhttpUpdate.onError(update_error);       //当升级失败时
-
-  t_httpUpdate_return ret = ESPhttpUpdate.update(UpdateClient, upUrl);
-  switch (ret)
-  {
-  case HTTP_UPDATE_FAILED: //当升级失败
-    Serial.println("[update] Update failed.");
-    break;
-  case HTTP_UPDATE_NO_UPDATES: //当无升级
-    Serial.println("[update] Update no Update.");
-    break;
-  case HTTP_UPDATE_OK: //当升级成功
-    Serial.println("[update] Update ok.");
-    digitalWrite(LED, HIGH);
-    break;
-  }
-}
-
 void setup()
 {
-  pinMode(LED, OUTPUT);          //设置引脚为输出模式
-  pinMode(BUTTON, INPUT_PULLUP); //设置按键上拉输出模式
-  digitalWrite(LED, HIGH);       //默认引脚上电高电平
+  pinMode(LED, OUTPUT);                            //设置引脚为输出模式
+  pinMode(BUTTON, INPUT_PULLUP);                   //设置按键上拉输出模式
+  digitalWrite(LED, HIGH);                         //默认引脚上电高电平
   Serial.begin(9600);                              //设置波特率9600
   setup_wifi();                                    //设置wifi的函数，连接wifi
   client.setServer(mqtt_server, mqtt_server_port); //设置mqtt服务器
