@@ -18,14 +18,14 @@
 
 //********************需要修改的部分*******************//
 int aaa = 0;
-String upUrl = "http://bin.bemfa.com/b/1BcMTE3M2ZiYWQ3NjAzNGY3YzM2MjlhNGExMGQ1ZGVlNTc=light002.bin"; // 升级网址
+String upUrl = "http://bin.bemfa.com/b/1BcMTE3M2ZiYWQ3NjAzNGY3YzM2MjlhNGExMGQ1ZGVlNTc=light1002.bin"; // 升级网址
 #define ID_MQTT "1173fbad76034f7c3629a4a10d5dee57"                                                   //用户私钥，控制台获取
-const char *topic = "light002";                                                                      //主题名字，可在巴法云控制台自行创建，名称随意
-const char *topicUp = "light002/up";                                                                 //只更新数据
+const char *topic = "light1002";                                                                      //主题名字，可在巴法云控制台自行创建，名称随意
+const char *topicUp = "light1002/up";                                                                 //只更新数据
 #define LED 0                                                                                        //单片机LED引脚值
 #define BUTTON 2                                                                                     //设备的物理按键引脚
 #define INTERVAL 100                                                                                 //物理按键检测间隔
-#define LONG_PRESS 300                                                                               //物理按键检测间隔
+#define LONG_PRESS 300                                                                               //物理按键长按定义
 //**************************************************//
 class ESP01Light : public Light
 {
@@ -46,7 +46,7 @@ public:
   void setLedBright(int num)
   {
     Light::setLedBright(num);
-    analogWrite(LED, 10 * this->ledBright);
+    analogWrite(LED, 10 * num);
   }
 };
 
@@ -83,11 +83,15 @@ void setBright(int num)
 //逐渐开灯
 void wake()
 {
-  for (int i = 1; i <= 100; i++)
+  if(light.getLedState() == false)
   {
-    light.setLedBright(i);
-    delay(30);
+    for (int i = 1; i <= 100; i++)
+    {
+      light.setLedBright(i);
+      delay(30);
+    }
   }
+ 
 }
 
 // 连接wifi
@@ -141,11 +145,6 @@ void callback(char *topic, byte *payload, unsigned int length)
   {
     // 缓慢开灯
     wake();
-  }
-  else if (cmd == "update")
-  {
-    // 更新固件
-    updateBin();
   }
   msg = "";
 }
@@ -203,44 +202,53 @@ void pubMQTTmsg(char *msg)
 void btnOpera()
 {
   int num = checkBtn(BUTTON, LOW);
-  // 短按逻辑
-  if (num == 1)
+  char str[10] = "on#";
+  switch(num)
   {
-    if (light.getLedState())
+    // 短按逻辑
+    case 1:
     {
-      turnOffLed();
-      pubMQTTmsg("off");
+      if (light.getLedState() == true)
+      {
+        turnOffLed();
+        pubMQTTmsg("off");
+      }
+      else
+      {
+        turnOnLed();
+        pubMQTTmsg("on");
+      }
+      break;
     }
-    else
+    case 2:
     {
-      turnOnLed();
-      pubMQTTmsg("on");
+      if (light.getLedBright() >= 100)
+      {
+        light.LEDDirect = false;
+      }
+      if (light.getLedBright() <= 1)
+      {
+        light.LEDDirect = true;
+      }
+      if (light.LEDDirect)
+      {
+        setBright(light.getLedBright() + 1);
+      }
+      else
+      {
+        setBright(light.getLedBright() - 1);
+      }
+      break;
     }
-  }
-  else if (num == 2)
-  {
-    if (light.getLedBright() >= 100)
+    case 3:
     {
-      light.LEDDirect = false;
+      itoa(light.getLedBright(), &str[3], 10);
+      pubMQTTmsg(str);
+      break;
     }
-    if (light.getLedBright() <= 1)
-    {
-      light.LEDDirect = true;
+    default:{
+      ;
     }
-    if (light.LEDDirect)
-    {
-      setBright(light.getLedBright() + 1);
-    }
-    else
-    {
-      setBright(light.getLedBright() - 1);
-    }
-  }
-  else if (num == 3)
-  {
-    char str[10];
-    itoa(light.getLedBright(), str, 10);
-    pubMQTTmsg(strcat("on#", str));
   }
 }
 long prevTime = 0;
@@ -277,70 +285,6 @@ int checkBtn(int pin, int state)
   }
   prevTime = millis();
   return 0;
-}
-
-//当升级开始时，打印日志
-void update_started()
-{
-  Serial.println("CALLBACK:  HTTP update process started");
-  digitalWrite(LED, HIGH);
-  delay(100);
-  digitalWrite(LED, LOW);
-  delay(100);
-  digitalWrite(LED, HIGH);
-  delay(100);
-  digitalWrite(LED, LOW);
-  delay(100);
-}
-
-//当升级结束时，打印日志
-void update_finished()
-{
-  Serial.println("CALLBACK:  HTTP update process finished");
-  digitalWrite(LED, HIGH);
-}
-
-//当升级中，打印日志
-void update_progress(int cur, int total)
-{
-  Serial.printf("CALLBACK:  HTTP update process at %d of %d bytes...\n", cur, total);
-}
-
-//当升级失败时，打印日志
-void update_error(int err)
-{
-  Serial.printf("CALLBACK:  HTTP update fatal error code %d\n", err);
-}
-
-/**
- * 固件升级函数
- * 在需要升级的地方，加上这个函数即可，例如setup中加的updateBin(); 
- * 原理：通过http请求获取远程固件，实现升级
- */
-void updateBin()
-{
-  Serial.println("start update");
-  WiFiClient UpdateClient;
-
-  ESPhttpUpdate.onStart(update_started);     //当升级开始时
-  ESPhttpUpdate.onEnd(update_finished);      //当升级结束时
-  ESPhttpUpdate.onProgress(update_progress); //当升级中
-  ESPhttpUpdate.onError(update_error);       //当升级失败时
-
-  t_httpUpdate_return ret = ESPhttpUpdate.update(UpdateClient, upUrl);
-  switch (ret)
-  {
-  case HTTP_UPDATE_FAILED: //当升级失败
-    Serial.println("[update] Update failed.");
-    break;
-  case HTTP_UPDATE_NO_UPDATES: //当无升级
-    Serial.println("[update] Update no Update.");
-    break;
-  case HTTP_UPDATE_OK: //当升级成功
-    Serial.println("[update] Update ok.");
-    digitalWrite(LED, HIGH);
-    break;
-  }
 }
 
 void setup()
