@@ -2,7 +2,6 @@
   #define LIGHT_H
   #define LIGHT_ON true       // 定义开灯状态
   #define LIGHT_OFF false     // 定义关灯灯状态
-#endif
 
 class Light {
   protected:
@@ -17,3 +16,5 @@ class Light {
     int getLedBright();           // 获得灯的亮度
     
 };
+
+#endif

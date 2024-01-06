@@ -3,7 +3,7 @@
 // 构造函数，初始化灯
 Light::Light(){
   this->ledState = false;
-  this->ledBright = 100;
+  this->ledBright = 1000;
 }
 
 // 设置灯的状态
@@ -30,8 +30,6 @@ void Light::setLedBright(int num){
   {
     this->ledState=true;
   }
-  
-  
 }
 
 int Light::getLedBright(){
